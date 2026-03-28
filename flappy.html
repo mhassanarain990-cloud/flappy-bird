@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Gold | Mano Final</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #05070a; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial Black', sans-serif; color: white; touch-action: manipulation; }
+        canvas { border: 3px solid #444; border-radius: 15px; box-shadow: 0 0 40px #000; background: #1a2a44; max-width: 100%; max-height: 100vh; }
+        #ui { position: absolute; text-align: center; pointer-events: none; z-index: 10; width: 100%; }
+        .btn { pointer-events: all; background: #ffd700; color: #000; padding: 12px 35px; border-radius: 50px; font-weight: 900; cursor: pointer; margin-top: 15px; box-shadow: 0 4px 0 #b8860b; transition: 0.1s; display: inline-block; }
+        .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b8860b; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div id="start-screen">
+            <h1 class="text-5xl md:text-6xl mb-2 text-yellow-400 italic">FLAPPY GOLD</h1>
+            <p class="text-xs opacity-60 uppercase tracking-widest">Tap Screen to Fly</p>
+            <div class="btn" onclick="startGame()">Start Game</div>
+        </div>
+        <div id="game-over" class="hidden">
+            <h1 class="text-4xl md:text-5xl mb-1 text-red-600 uppercase">Crashed</h1>
+            <p id="final-score" class="text-2xl font-bold">Score: 0</p>
+            <p id="final-coins" class="text-lg text-yellow-400 mb-4">Total Coins: 0</p>
+            <div class="btn" onclick="startGame()">Try Again</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Canvas Responsive Size
+        canvas.width = 400;
+        canvas.height = 600;
+
+        let bird, pipes, coins, score, coinTotal, gameActive = false, frame = 0, gameSpeed;
+
+        // Sound Engine
+        function playSound(freq, type, duration) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        function init() {
+            bird = {
+                x: 60, y: 280, w: 40, h: 30,
+                velocity: 0,
+                gravity: 0.28,      
+                jumpForce: -5.8,    
+                rotation: 0,
+                state: 'glide'
+            };
+            pipes = [];
+            coins = [];
+            score = 0;
+            coinTotal = 0;
+            frame = 0;
+            gameSpeed = 3.2;
+            gameActive = true;
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over').classList.add('hidden');
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function drawBird() {
+            ctx.save();
+            ctx.translate(bird.x + bird.w/2, bird.y + bird.h/2);
+            bird.rotation = Math.min(Math.PI/3, Math.max(-Math.PI/8, bird.velocity * 0.12));
+            ctx.rotate(bird.rotation);
+
+            ctx.fillStyle = "#FFD700"; 
+            ctx.beginPath(); ctx.ellipse(0, 0, 20, 15, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
+
+            ctx.fillStyle = "white";
+            let wingOffset = (bird.state === 'flap') ? Math.sin(frame * 0.5) * 8 : 2;
+            ctx.beginPath(); ctx.ellipse(-12, wingOffset, 12, 7, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            
+            ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(10, -5, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(12, -5, 2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#FF4500"; ctx.beginPath(); ctx.moveTo(18, 2); ctx.lineTo(28, 5); ctx.lineTo(18, 8); ctx.fill(); ctx.stroke();
+            ctx.restore();
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            ctx.fillStyle = "#0b0e14"; ctx.fillRect(0,0, canvas.width, canvas.height);
+            
+            // Stars
+            ctx.fillStyle = "white";
+            for(let i=0; i<8; i++) ctx.fillRect((i*60 + frame*0.5)%400, (i*85)%600, 2, 2);
+
+            bird.velocity += bird.gravity;
+            bird.y += bird.velocity;
+
+            if (frame % 100 === 0) {
+                let gap = 165;
+                let topH = Math.random() * (canvas.height - gap - 120) + 60;
+                pipes.push({ x: canvas.width, y: topH, gap: gap, passed: false });
+                coins.push({ x: canvas.width + 100, y: topH + gap/2, collected: false });
+            }
+
+            pipes.forEach((p, index) => {
+                p.x -= gameSpeed;
+                ctx.fillStyle = "#2d4a1e";
+                ctx.fillRect(p.x, 0, 75, p.y);
+                ctx.fillRect(p.x, p.y + p.gap, 75, canvas.height);
+                ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 2;
+                ctx.strokeRect(p.x, 0, 75, p.y);
+                ctx.strokeRect(p.x, p.y + p.gap, 75, canvas.height);
+
+                if (bird.x + 15 > p.x && bird.x - 15 < p.x + 75) {
+                    if (bird.y - 12 < p.y || bird.y + 12 > p.y + p.gap) die();
+                }
+                if (p.x + 75 < bird.x && !p.passed) { score++; p.passed = true; gameSpeed += 0.04; }
+                if (p.x + 80 < 0) pipes.splice(index, 1);
+            });
+
+            coins.forEach((c, index) => {
+                c.x -= gameSpeed;
+                if (!c.collected) {
+                    ctx.fillStyle = "#FFD700"; ctx.beginPath(); ctx.arc(c.x, c.y, 12, 0, Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = "white"; ctx.stroke();
+                    if (Math.hypot(bird.x - c.x, bird.y - c.y) < 30) {
+                        c.collected = true; coinTotal++; 
+                        playSound(880, 'triangle', 0.1);
+                    }
+                }
+                if (c.x + 20 < 0) coins.splice(index, 1);
+            });
+
+            if (bird.y > canvas.height || bird.y < 0) die();
+            drawBird();
+
+            ctx.fillStyle = "white"; ctx.font = "bold 22px Arial"; ctx.textAlign = "left";
+            ctx.fillText("Score: " + score, 20, 40);
+            ctx.fillStyle = "#ffd700"; ctx.fillText("Coins: " + coinTotal, 20, 70);
+
+            frame++;
+            requestAnimationFrame(update);
+        }
+
+        function die() {
+            gameActive = false;
+            playSound(150, 'sawtooth', 0.3);
+            document.getElementById('final-score').innerText = "Score: " + score;
+            document.getElementById('final-coins').innerText = "Total Coins: " + coinTotal;
+            document.getElementById('game-over').classList.remove('hidden');
+        }
+
+        function startGame() { init(); update(); }
+
+        // INPUT HANDLERS (MOBILE + LAPTOP)
+        function handleInputStart() {
+            if (!gameActive) return;
+            bird.velocity = bird.jumpForce;
+            bird.state = 'flap';
+            playSound(400, 'sine', 0.05);
+        }
+
+        function handleInputEnd() {
+            if (gameActive) bird.state = 'glide';
+        }
+
+        // Keyboard
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') handleInputStart(); });
+        window.addEventListener('keyup', (e) => { if (e.code === 'Space') handleInputEnd(); });
+
+        // Mouse
+        canvas.addEventListener('mousedown', (e) => { e.preventDefault(); handleInputStart(); });
+        canvas.addEventListener('mouseup', handleInputEnd);
+
+        // Touch (Mobile)
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInputStart(); }, {passive: false});
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); handleInputEnd(); }, {passive: false});
+
+        // Initial Background
+        ctx.fillStyle = "#1a2a44"; ctx.fillRect(0,0, canvas.width, canvas.height);
+    </script>
+</body>
+</html>
